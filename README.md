@@ -53,4 +53,4 @@ Limites à écrire dans ton document
 
 Le lien avec ta méthode : les distances aux seuils alimentent directement Ω_Spatiale à l'étape 7 (disque autour de la nappe, croisé avec le SIG).
 
-Tu veux que je te livre ce calcul sous forme de script Python réutilisable, ou qu'on passe au feu éclair et à la dispersion ?
+
