@@ -1,333 +1,92 @@
+# Méthode hiérarchique d'estimation probabiliste des distances d'effets thermiques des feux de nappe
 
-\usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
-\usepackage[french]{babel}
-\usepackage{amsmath,amssymb}
-\usepackage{booktabs}
-\usepackage{geometry}
-\usepackage{float}
-\usepackage{xcolor}
-\usepackage{hyperref}
-\usepackage{siunitx}
-
-\geometry{margin=2.5cm}
-
-\title{
-    \textbf{Amélioration de la méthode INERIS (FNAP)}\\
-    \large Modélisation du feu de nappe — Corrections et extensions
-}
-\author{
-    \textbf{Nassima HANED}\\
-    \small Ingénieur en Planification et Statistique
-}
-\date{\today}
+*Synthèse de travail — version à compléter avec les résultats CFD.*
 
-\begin{document}
-\maketitle
+## 1. Objectif
 
-\begin{abstract}
-Ce document présente une version améliorée de la méthode INERIS (logiciel FNAP, 1994) pour la modélisation du feu de nappe. La méthode originale repose sur cinq étapes : géométrie de la nappe, vitesse de combustion, hauteur de flamme (Thomas), puissance émissive (Mudan-Croce) et flux reçu. Dix corrections additives sont proposées pour pallier ses limites : intégration de la corrélation de Heskestad, facteur d'écran, terme convectif, méthode des sources multiples, Zabetakis-Burgess, effet du vent, calibration et approche Monte-Carlo. La version améliorée reste compatible avec la réglementation et les seuils (3, 5, 8~kW/m\textsuperscript{2}).
-\end{abstract}
-
-\tableofcontents
-\newpage
-
-% ============================================================
-\section{Introduction}
-% ============================================================
-
-La méthode en cinq étapes utilisée pour la modélisation du feu de nappe est \textbf{identique à celle de l'INERIS} (logiciel FNAP, 1994). Elle repose sur les corrélations classiques de Zabetakis-Burgess, Thomas et Mudan-Croce. L'objectif de ce document est de proposer une \textbf{version améliorée} de cette méthode, en conservant sa structure et sa compatibilité réglementaire.
-
-% ============================================================
-\section{Rappel de la méthode originale}
-% ============================================================
-
-\subsection{Étape 1 — Géométrie de la nappe}
-
-\[
-D = \sqrt{\frac{4A}{\pi}}
-\]
-
-\subsection{Étape 2 — Vitesse de combustion}
-
-\[
-\dot{m}'' = 0{,}055 \text{ kg/m}^2\text{·s} \quad \text{(essence)}
-\]
+Estimer, pour une nappe enflammée (circulaire ou cuvette rectangulaire), les distances aux seuils de flux thermique de 3, 5 et 8 kW/m², sous forme de **distribution de probabilité** et non de valeur unique, en combinant des outils existants dans une architecture hiérarchique cohérente. La contribution revendiquée est l'**articulation** des niveaux, pas la création de nouvelles corrélations.
 
-\subsection{Étape 3 — Hauteur de flamme (Thomas)}
-
-\[
-\frac{H}{D} = 42 \left[ \frac{\dot{m}''}{\rho_{\text{air}} \sqrt{g D}} \right]^{0{,}61}
-\]
+## 2. Architecture
 
-\subsection{Étape 4 — Puissance émissive (Mudan-Croce)}
+| Niveau | Outil | Rôle |
+|---|---|---|
+| 1 | Corrélations + flamme solide | Estimation rapide, criblage, simulateur de référence |
+| 2 | CFD (ex. FDS) | Physique complexe ; plan d'expériences ; calibrage du niveau 1 |
+| 3 | Métamodèle (processus gaussien) | Remplace la CFD pour les milliers de tirages |
+| 4 | Monte-Carlo | Propagation de l'incertitude des entrées |
 
-\[
-\text{SEP} = \text{SEP}_{\max} e^{-sD} + \text{SEP}_{\text{suie}} \left( 1 - e^{-sD} \right)
-\]
-
-Avec $\text{SEP}_{\max} = 140$~kW/m\textsuperscript{2}, $\text{SEP}_{\text{suie}} = 20$~kW/m\textsuperscript{2}, $s = 0{,}12$~m\textsuperscript{-1}.
-
-\subsection{Étape 5 — Flux reçu}
-
-\[
-q = \text{SEP} \cdot \tau \cdot F
-\]
-
-Avec $\tau = 2{,}02 (P_w d)^{-0{,}09}$ et $F$ le facteur de vue.
-
-% ============================================================
-\section{Limites de la méthode originale}
-% ============================================================
-
-\begin{table}[H]
-\centering
-\caption{Limites identifiées de la méthode INERIS (FNAP)}
-\begin{tabular}{@{}cl@{}}
-\toprule
-N° & Limite \\
-\midrule
-1 & Flamme cylindrique idéalisée \\
-2 & Absence d'obstacles \\
-3 & Calcul purement radiatif \\
-4 & Géométries de nappe limitées \\
-5 & Domaine de validité restreint \\
-6 & Sensibilité à la surface \\
-7 & Vitesse de combustion constante \\
-8 & Conditions météorologiques figées \\
-9 & Écarts avec l'expérimental (6--23\%) \\
-10 & Fiabilité statistique faible \\
-\bottomrule
-\end{tabular}
-\end{table}
+Ordre de travail : niveau 1 → CFD sur plan d'expériences → métamodèle entraîné sur la CFD → Monte-Carlo **sur le métamodèle**. Ce n'est pas une chaîne où chaque étape consomme la précédente : la CFD est un calcul indépendant de plus haute fidélité, qui sert à calibrer et valider le niveau 1.
 
-% ============================================================
-\section{Corrections proposées}
-% ============================================================
+## 3. Niveau 1 : modèle
 
-\subsection{Correction 1 — Corrélation de Heskestad}
+1. Diamètre équivalent : D = √(4A/π).
+2. Vitesse de combustion (Burgess) : ṁ'' = ṁ''∞ (1 − e^(−kβD)) ; essence : ṁ''∞ = 0,055 kg/m²·s, kβ = 2,1 m⁻¹.
+3. Hauteur de flamme : Thomas en air calme, H/D = 42 [ṁ''/(ρ_a √(gD))]^0,61, multipliée par un facteur correctif fH (voir §6).
+4. Inclinaison sous le vent : corrélation de Johnson (tan θ / cos θ = 0,666 Re^0,117 Fr^(1/3)).
+5. Puissance émissive moyenne (Mudan-Croce) : SEP = SEP_max e^(−sD) + SEP_suie (1 − e^(−sD)), avec 140 kW/m², 20 kW/m², s = 0,12 m⁻¹.
+6. Flux reçu : q = SEP · Σ τ_i F_i, par intégration de la surface de la flamme (prisme oblique construit sur l'empreinte de la nappe), avec transmissivité atmosphérique τ = min(1, 2,02 (P_w x)^(−0,09)), P_w en Pa, x en m, calculée patch par patch.
+7. Orientation de la cible : la plus pénalisante, q = SEP √(F_h² + F_v²).
+8. Distances mesurées depuis le **bord** de la nappe ; on retient la distance d'enveloppe (maximum sur tous les azimuts).
 
-Pour les grandes nappes ($D > 20$~m), remplacer Thomas par Heskestad :
+## 4. Niveaux 2 et 3 : plan d'expériences et métamodèle
 
-\[
-L = 0{,}235 \dot{Q}^{2/5} - 1{,}02 D
-\]
+- Entrées du métamodèle : surface A, vitesse du vent u, rapport L/l de la cuvette, angle du vent par rapport au grand côté, facteur fH. Pour une nappe circulaire, l'azimut est une coordonnée de sortie et non une entrée.
+- Plan d'expériences par hypercube latin. Dans les démonstrations ci-dessous, 150 à 200 points ont été évalués avec le **niveau 1 comme simulateur** ; pour de vrais résultats, ces points doivent être des runs CFD (nombre à fixer selon le coût d'un run et le nombre d'entrées).
+- Métamodèle : processus gaussien (noyau de Matérn anisotrope), sortie en log(d + 1).
+- Validation : jeu de test indépendant, validation croisée, comparaison avec un Monte-Carlo direct.
 
-Avec $\dot{Q} = \dot{m}'' \cdot A \cdot \Delta H_c$ la puissance totale (kW).
+## 5. Niveau 4 : Monte-Carlo
 
-\subsection{Correction 2 — Facteur d'écran}
+Lois d'entrée utilisées dans les démonstrations (à remplacer par des données du site) : vent Weibull (k = 2, λ = 5 m/s) ; surface log-normale (médiane 50 m², σ = 0,3) ; angle du vent uniforme. Le Monte-Carlo (10⁵ tirages) est exécuté sur le métamodèle. La probabilité de dépassement d'une distance donnée se lit directement sur la distribution.
 
-Pour tenir compte des obstacles (murs, auvents, bâtiments) :
+## 6. Validation du niveau 1 sur mesures publiées
 
-\[
-q_{\text{corrigé}} = q \times \eta_{\text{écran}}
-\]
+| Test | Observé | Modèle | Écart |
+|---|---|---|---|
+| Inclinaison, GNL 20 m, 6,15 m/s | 54° | 54,9° | +1,7 % |
+| Inclinaison, GPL 20 m, 6,6 m/s | 53° | 55,8° | +5,3 % |
+| Longueur de flamme (L/D), GNL | 2,15 | 1,91 | −11 % |
+| Longueur de flamme (L/D), GPL | 2,35 | 2,16 | −8 % |
+| Longueur de flamme (L/D), kérosène | 1,5 à 1,9 | 1,35 | −21 % (milieu de plage) |
+| SEP kérosène, D = 10 m | 60 kW/m² | 56 | −6 % |
+| SEP kérosène, D = 20 m | 35 kW/m² | 31 | −12 % |
+| Transmissivité, 30 m et 110 m (27 °C, 53 % HR) | 0,75 ; 0,67 | 0,75 ; 0,67 | < 1 % |
 
-\begin{table}[H]
-\centering
-\caption{Facteurs d'écran}
-\begin{tabular}{@{}lc@{}}
-\toprule
-Configuration & $\eta_{\text{écran}}$ \\
-\midrule
-Pas d'obstacle & 1,0 \\
-Auvent partiel & 0,7 \\
-Mur plein & 0,3 \\
-Écran total & 0,1 \\
-\bottomrule
-\end{tabular}
-\end{table}
+Sources : Mizner et Eyre (1982) pour les feux de 20 m ; les valeurs de SEP du kérosène sont citées par ces auteurs d'après Häglund et Persson. Observations complémentaires : feu de gazole de 41,5 m (Pimper et al., 2014), flux sous le vent environ deux fois supérieur au flux au vent, SEP moyenne de 20 à 30 kW/m².
 
-\subsection{Correction 3 — Terme convectif}
+**Facteur fH.** Thomas en air calme sous-estime la longueur de flamme de 8 à 21 % dans ces essais ; on retient fH log-normal, médiane 1,13, σ_ln = 0,10 (choix fondé sur trois points, à recaler sur la CFD). La formule de Thomas avec vent donne des flammes nettement plus courtes (L/D de 1,50 et 1,70 pour le GNL et le GPL, soit 38 à 44 % de moins que l'observé) et n'a pas été retenue ici.
 
-En champ proche ($< 5$~m), ajouter la convection :
+## 7. Résultats illustratifs (essence, A médiane 50 m², vent Weibull)
 
-\[
-q_{\text{total}} = q_{\text{rad}} + q_{\text{conv}}
-\]
+Distances d'enveloppe à 3 kW/m², en mètres depuis le bord, P50 / P95. **Simulateur = niveau 1, non CFD.**
 
-Avec $q_{\text{conv}} = h (T_f - T_c)$, $h = 10$ à $50$~W/m\textsuperscript{2}·K.
+| Modèle de hauteur de flamme | Carré (L/l = 1) | Rectangle (L/l = 4) |
+|---|---|---|
+| Thomas avec vent | 20,3 / 25,2 | 24,6 / 31,2 |
+| Thomas air calme, sans correction | 25,3 / 28,8 | 30,1 / 35,0 |
+| Thomas air calme × fH (médiane 1,13) | 27,3 / 32,3 | 32,3 / 38,9 |
 
-\subsection{Correction 4 — Sources multiples}
+Avec la dernière ligne, les distances à 5 et 8 kW/m² (P50) sont de 22,4 et 18,5 m pour L/l = 1, et de 26,2 et 21,5 m pour L/l = 4. Le métamodèle reproduit le Monte-Carlo direct (erreur absolue moyenne d'environ 0,24 m sur 60 cas de test).
 
-Pour les géométries complexes, diviser la nappe en $N$ sous-nappes circulaires :
+À surface égale, une cuvette allongée donne des distances plus grandes qu'un cercle équivalent (jusqu'à environ +30 % pour L/l = 4 avec le vent perpendiculaire au grand côté, à H fixé). Le cercle équivalent peut donc être non conservateur.
 
-\[
-q_{\text{total}}(x) = \sum_{i=1}^{N} q_i(x)
-\]
+## 8. Limites et travaux restants
 
-\subsection{Correction 5 — Extension du domaine de validité}
+1. **La CFD n'a pas été exécutée** : tous les chiffres des §7 viennent du niveau 1.
+2. **Le choix du modèle de hauteur de flamme domine l'incertitude** (écart de plus de 30 % sur le P50) et n'est validé ni pour l'essence ni pour D ≈ 8 m.
+3. H, l'inclinaison et le SEP sont calculés avec le diamètre équivalent, hypothèse non validée pour les nappes très allongées.
+4. Visibilité exacte seulement pour une empreinte convexe ; géométries complexes (obstacles, cuvettes multiples, flammes fusionnées) à traiter en CFD.
+5. SEP uniforme et rose des vents uniforme : à remplacer par des données réelles.
+6. Données de validation en champ lointain pour l'essence : non trouvées. À obtenir (rapport Sandia SAND2010-6810C, nappe de 7,93 m en JP-8, flux près du calorimètre) ou à produire.
+7. Le métamodèle n'est valable que dans le domaine d'entraînement ; un métamodèle par combustible.
+8. Originalité : à établir par une revue de littérature (métamodèles et QRA des feux de nappe) avant toute affirmation.
 
-\begin{table}[H]
-\centering
-\caption{Choix du modèle selon le diamètre}
-\begin{tabular}{@{}lc@{}}
-\toprule
-Diamètre & Modèle recommandé \\
-\midrule
-$D < 20$~m & Thomas \\
-$20 < D < 50$~m & Thomas ou Heskestad \\
-$D > 50$~m & Heskestad ou CFD \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Correction 6 — Analyse de sensibilité}
-
-Calculer les distances pour trois scénarios de surface :
-
-\begin{table}[H]
-\centering
-\caption{Scénarios de surface}
-\begin{tabular}{@{}lc@{}}
-\toprule
-Scénario & Surface \\
-\midrule
-Optimiste & $0{,}5 A$ \\
-Nominal & $A$ \\
-Pessimiste & $1{,}5 A$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Correction 7 — Zabetakis-Burgess}
-
-Remplacer la vitesse de combustion constante par :
-
-\[
-\dot{m}''(D) = \dot{m}''_{\infty} \left( 1 - e^{-k\beta D} \right)
-\]
-
-Pour l'essence : $\dot{m}''_{\infty} = 0{,}055$~kg/m\textsuperscript{2}·s, $k\beta = 2{,}1$~m\textsuperscript{-1}.
-
-\subsection{Correction 8 — Effet du vent}
-
-Utiliser la version de Thomas avec vent :
-
-\[
-L = 19{,}18 \times \dot{m}^{0{,}74} \times D^{0{,}735}
-\]
-
-Et calculer l'inclinaison :
-
-\[
-\cos\theta = \begin{cases} 1 & \text{si } u^* \leq 1 \\ (u^*)^{-0{,}5} & \text{si } u^* > 1 \end{cases}
-\]
-
-Avec $u^* = u / (g \dot{m}'' D / \rho_v)^{1/3}$.
-
-\subsection{Correction 9 — Facteur de calibration}
-
-\[
-q_{\text{calibré}} = C_{\text{cal}} \times q_{\text{calculé}}
-\]
-
-\begin{table}[H]
-\centering
-\caption{Facteurs de calibration}
-\begin{tabular}{@{}lc@{}}
-\toprule
-Source & $C_{\text{cal}}$ \\
-\midrule
-INERIS & 1,0 \\
-Essais PROSERPINE & 0,9 \\
-RETEX & 0,85 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Correction 10 — Approche Monte-Carlo}
-
-Remplacer la valeur unique par une distribution :
-
-\[
-\dot{m}'' \sim \mathcal{N}(0{,}055, 0{,}01)
-\]
-
-Puis simuler Monte-Carlo pour obtenir une distribution des distances.
-
-% ============================================================
-\section{Formule améliorée}
-% ============================================================
-
-\[
-\boxed{
-q_{\text{amélioré}} = \eta_{\text{écran}} \times C_{\text{cal}} \times \left( q_{\text{rad}} + q_{\text{conv}} \right)
-}
-\]
-
-Avec :
-\begin{align*}
-q_{\text{rad}} &= \text{SEP} \times \tau \times F \\
-q_{\text{conv}} &= h (T_f - T_c)
-\end{align*}
-
-% ============================================================
-\section{Comparaison INERIS vs INERIS amélioré}
-% ============================================================
-
-\begin{table}[H]
-\centering
-\caption{Comparaison des deux versions}
-\begin{tabular}{@{}lcc@{}}
-\toprule
-Élément & INERIS (FNAP) & INERIS amélioré \\
-\midrule
-Géométrie & $D = \sqrt{4A/\pi}$ & Idem \\
-$\dot{m}''$ & Constante & Zabetakis-Burgess \\
-Hauteur de flamme & Thomas & Thomas ou Heskestad \\
-Pouvoir émissif & Mudan-Croce & Idem \\
-Transmissivité & Bagster & Idem \\
-Facteur de vue & Mudan & Idem \\
-Obstacles & Non & $\eta_{\text{écran}}$ \\
-Convection & Non & $q_{\text{conv}}$ \\
-Vent & Fixe 5~m/s & Variable \\
-Incertitude & Non & Monte-Carlo \\
-Calibration & Non & $C_{\text{cal}}$ \\
-Seuils & 3, 5, 8~kW/m\textsuperscript{2} & Idem \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-% ============================================================
-\section{Ce que cela apporte}
-% ============================================================
-
-\begin{table}[H]
-\centering
-\caption{Apports de la version améliorée}
-\begin{tabular}{@{}ll@{}}
-\toprule
-Apport & Détail \\
-\midrule
-Précision & Meilleure pour petites nappes \\
-Réalisme & Obstacles et convection intégrés \\
-Flexibilité & Géométries complexes \\
-Incertitude & Quantifiée \\
-Traçabilité & Corrections documentées \\
-Compatibilité & Réglementation respectée \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-% ============================================================
-\section{Conclusion}
-% ============================================================
-
-La méthode en cinq étapes utilisée dans ce travail est \textbf{identique à celle de l'INERIS} (logiciel FNAP). Dans une démarche d'amélioration, dix corrections sont proposées : utilisation de Heskestad pour les grandes nappes, facteur d'écran pour les obstacles, terme convectif en champ proche, méthode des sources multiples, Zabetakis-Burgess pour la vitesse de combustion, version de Thomas avec vent, facteur de calibration, et approche Monte-Carlo.
-
-Ces corrections sont \textbf{additives} : elles ne cassent pas la méthode originale, mais l'enrichissent. La version améliorée reste compatible avec la réglementation et les seuils (3, 5, 8~kW/m\textsuperscript{2}).
-
-% ============================================================
-\section*{Références}
-% ============================================================
-
-\begin{itemize}
-    \item Zabetakis, M.G., Burgess, D.S. (1961). \textit{Research on the hazards associated with the production and handling of liquid hydrogen}. US Bureau of Mines.
-    \item Thomas, P.H. (1963). \textit{The size of flames from natural fires}. 9th Symposium on Combustion.
-    \item Mudan, K.S., Croce, P.A. (1980). \textit{Fire hazard calculations for large open hydrocarbon fires}. SFPE Handbook.
-    \item INERIS (1994). \textit{Logiciel FNAP — Feux de nappes}. Rapport technique.
-    \item Heskestad, G. (1983). \textit{Luminous heights of turbulent diffusion flames}. Fire Safety Journal.
-\end{itemize}
-
-\end{document}
+## 9. Références consultées
+
+- Mizner, G. A., Eyre, J. A. (1982). *Large-scale LNG and LPG pool fires*. IChemE Symposium Series No. 71.
+- Pimper, L., Mészáros, Z., Koseki, H. (2014). *Large scale diesel oil burns*. AARMS 13(2), 329–336.
+- Johnson, A. D. (1992). *A model for predicting thermal radiation hazards from large-scale LNG pool fires*. IChemE Symposium Series No. 130 (extrait consulté seulement).
+- Thomas, P. H. (1963). *The size of flames from natural fires*. 9th Symposium (International) on Combustion (cité par Mizner et Eyre).
+- Notice du rapport SAND2010-6810C, PATRAM 2010 (rapport complet non consulté).
+
+À citer à partir des sources originales, non consultées ici : Burgess/Babrauskas (vitesse de combustion), Mudan et Croce (SEP), formule de transmissivité atmosphérique, textes réglementaires définissant les seuils de 3, 5 et 8 kW/m².
